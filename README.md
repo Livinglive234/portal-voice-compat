@@ -15,8 +15,9 @@ dimensions, or far away in the same dimension)
 (`speaker → portal → portal exit → listener`, mirroring how Immersive Portals
 itself does cross-portal sounds), and sends those listeners a
 `LocationalSoundPacket` placed at a *virtual* position along the
-listener→portal-exit ray at the true path distance — so volume falloff is
-correct and the sound pans from the portal opening.
+listener→speaker ray (toward where the speaker appears through the portal) at
+the true path distance — so volume falloff follows the path and the sound comes
+from the direction you see the speaker in.
 
 No client mod needed — the receiving client just plays positional audio at the
 given coordinates.
@@ -51,8 +52,8 @@ The jar lands in `build/libs/`.
 ## Behavior notes
 
 - **Volume is path-correct.** Loudness reflects the full path (speaker → portal →
-  you), not just your distance to the portal. The *direction* always points at the
-  portal opening, which is where the sound arrives from.
+  you), not just your distance to the portal. The *direction* points at where
+  the speaker appears through the portal, matching what you see.
 - **Same-dimension portals work too.** If a portal links two distant places in one
   dimension, listeners out of direct range but within range through the portal hear
   the speaker. Listeners already in direct range are left to SimpleVC, so nobody
@@ -67,11 +68,6 @@ The jar lands in `build/libs/`.
 - Threading: SimpleVC fires mic events on its own thread; the mod hops to the
   server thread before touching the world, and does nothing if the speaker has no
   portal nearby.
-
-## Future work
-
-- Client mixin option: exact speaker positioning and the talking indicator, at the
-  cost of requiring the mod on clients too.
 
 ## License
 

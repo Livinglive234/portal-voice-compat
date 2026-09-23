@@ -31,10 +31,10 @@ public final class PortalVoiceHelper {
      * A viable voice path from speaker to listener through one portal.
      *
      * @param soundPos where to place the positional audio packet, in the LISTENER's
-     *                 dimension. Not the raw portal exit: it is pushed out along the
-     *                 listener-&gt;portal-exit ray until its distance from the listener
-     *                 equals the true path length, so the client's normal falloff gives
-     *                 the correct loudness while panning still points at the portal.
+     *                 dimension. It lies on the ray from the listener toward where the
+     *                 speaker appears through the portal, at a distance equal to the
+     *                 true path length, so the client's normal falloff gives the
+     *                 correct loudness while panning matches what the listener sees.
      * @param distance total path length: speaker-&gt;portal + portal exit-&gt;listener
      */
     public record PortalRoute(Vec3 soundPos, double distance) {
@@ -93,10 +93,18 @@ public final class PortalVoiceHelper {
                     continue;
                 }
 
-                // Degenerate case: listener is exactly at the exit, so any direction works.
-                Vec3 dir = distExitToReceiver > 1e-3
-                        ? toExit.scale(1.0 / distExitToReceiver)
-                        : new Vec3(0, 0, 1);
+                // Aim at where the speaker appears through the portal (the same spot the
+                // listener sees them standing), so the voice comes from the right direction.
+                // Fall back to the portal exit if that direction is degenerate.
+                Vec3 toApparent = portal.transformPoint(senderPos).subtract(receiverPos);
+                Vec3 dir;
+                if (toApparent.lengthSqr() > 1e-6) {
+                    dir = toApparent.normalize();
+                } else if (distExitToReceiver > 1e-3) {
+                    dir = toExit.scale(1.0 / distExitToReceiver);
+                } else {
+                    dir = new Vec3(0, 0, 1);
+                }
                 best = new PortalRoute(receiverPos.add(dir.scale(total)), total);
             } catch (Exception e) {
                 // One misbehaving portal shouldn't take down voice for everyone.

@@ -31,10 +31,9 @@ import java.util.UUID;
  * portal</em> but not directly. That includes listeners in another dimension and
  * listeners in the same dimension whose direct distance is out of range.</p>
  *
- * <p>The packet is positioned along the listener-&gt;portal-exit ray at the true path
- * distance, so volume is correct and panning points at the portal. No client mod is
- * needed. The trade-off is that direction always points at the portal, not at the
- * speaker.</p>
+ * <p>The packet is positioned along the ray from the listener toward where the speaker
+ * appears through the portal, at the true path distance, so volume follows the path
+ * and panning matches what the listener sees. No client mod is needed.</p>
  *
  * <p><b>Threading:</b> Simple Voice Chat fires mic events on its own packet thread.
  * The world and player list are only touched after hopping to the server thread.</p>
