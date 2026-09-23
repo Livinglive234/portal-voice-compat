@@ -65,9 +65,11 @@ The jar lands in `build/libs/`.
 - **Whispering** uses the shorter whisper range, same as vanilla.
 - **Group chat stays private:** speakers in a voice group are never forwarded.
 - Single hop only: voice goes through one portal, not chains of them. The shortest portal path wins.
-- Threading: SimpleVC fires mic events on its own thread; the mod hops to the
-  server thread before touching the world, and does nothing if the speaker has no
-  portal nearby.
+- Threading: voice is sent straight from SimpleVC's packet thread. The server
+  thread refreshes a snapshot of players and nearby portals twice a second, so
+  packets aren't batched into tick-sized bursts. The trade-off: a player who has
+  just joined, or just walked up to a portal, can take up to half a second to
+  start carrying voice.
 
 ## License
 

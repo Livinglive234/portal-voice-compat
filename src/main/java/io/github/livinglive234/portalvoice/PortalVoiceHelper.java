@@ -18,8 +18,9 @@ import java.util.List;
  * sound: sound travels from the speaker to the nearest point on the portal, pops out
  * at the transformed position on the other side, then travels to the listener.
  *
- * <p><b>Threading:</b> callers MUST invoke this on the Minecraft server thread. The
- * portal lookup iterates the level's entity storage.</p>
+ * <p><b>Threading:</b> {@link #voicePortalsNear} MUST run on the Minecraft server
+ * thread (it iterates entity storage). {@link #findBestRoute} is only geometry on
+ * already-loaded portals, so it can run on Simple Voice Chat's packet thread.</p>
  */
 public final class PortalVoiceHelper {
     private static final Logger LOGGER = LoggerFactory.getLogger(PortalVoiceCompat.MOD_ID);
@@ -41,17 +42,15 @@ public final class PortalVoiceHelper {
     }
 
     /**
-     * Portals near {@code sender} that voice can pass through. Called once per voice
-     * packet (not once per listener), since the result is the same for every listener.
-     * Must be called on the server thread.
+     * Valid, visible portals within {@code radius} of {@code sender}. Must be called on
+     * the server thread; the result is immutable state that is safe to read elsewhere.
      */
-    public static List<Portal> voicePortalsNear(ServerPlayer sender, double maxRange) {
+    public static List<Portal> voicePortalsNear(ServerPlayer sender, double radius) {
         List<Portal> portals = new ArrayList<>();
-        Vec3 senderPos = sender.position();
         try {
             // Covers global portals as well as portal entities.
-            IPMcHelper.foreachNearbyPortals(sender.level(), senderPos, (int) Math.ceil(maxRange), portal -> {
-                if (portal.isPortalValid() && portal.isVisible() && portal.isInFrontOfPortal(senderPos)) {
+            IPMcHelper.foreachNearbyPortals(sender.level(), sender.position(), (int) Math.ceil(radius), portal -> {
+                if (portal.isPortalValid() && portal.isVisible()) {
                     portals.add(portal);
                 }
             });
@@ -59,7 +58,7 @@ public final class PortalVoiceHelper {
             LOGGER.debug("Portal lookup failed", e);
             portals.clear();
         }
-        return portals;
+        return List.copyOf(portals);
     }
 
     /**
@@ -75,7 +74,7 @@ public final class PortalVoiceHelper {
 
         for (Portal portal : portals) {
             try {
-                if (!portal.getDestDim().equals(receiverDim)) {
+                if (!portal.getDestDim().equals(receiverDim) || !portal.isInFrontOfPortal(senderPos)) {
                     continue;
                 }
 

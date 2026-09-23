@@ -11,6 +11,7 @@ import de.maxhenkel.voicechat.api.packets.LocationalSoundPacket;
 import de.maxhenkel.voicechat.api.packets.MicrophonePacket;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
@@ -18,7 +19,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import qouteall.imm_ptl.core.portal.Portal;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -35,24 +38,60 @@ import java.util.UUID;
  * appears through the portal, at the true path distance, so volume follows the path
  * and panning matches what the listener sees. No client mod is needed.</p>
  *
- * <p><b>Threading:</b> Simple Voice Chat fires mic events on its own packet thread.
- * The world and player list are only touched after hopping to the server thread.</p>
+ * <p><b>Threading:</b> Simple Voice Chat fires mic events on its own packet thread, and
+ * packets are sent from there directly. Queueing each one onto the server thread would
+ * deliver them in tick-sized bursts, which sounds like random pops. Instead the server
+ * thread refreshes an immutable {@link Snapshot} of players and nearby portals a couple
+ * of times a second, and the voice thread only reads it.</p>
  */
 public class PortalVoiceCompat implements ModInitializer, VoicechatPlugin {
     public static final String MOD_ID = "portal-voice-compat";
     private static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    // Static because Fabric creates a separate instance per entrypoint (main, voicechat).
-    private static volatile MinecraftServer server;
-    private volatile VoicechatServerApi voicechatApi;
+    private static final int REFRESH_INTERVAL_TICKS = 10;
+    // Speakers may walk a few blocks between refreshes, so search a bit past voice range.
+    private static final double PORTAL_SEARCH_MARGIN = 8;
+
+    /** A player standing near at least one portal, with those portals. */
+    private record Speaker(ServerPlayer player, List<Portal> portals) {
+    }
+
+    private record Snapshot(List<ServerPlayer> players, Map<UUID, Speaker> speakersNearPortals) {
+        static final Snapshot EMPTY = new Snapshot(List.of(), Map.of());
+    }
+
+    // Static because Fabric creates a separate instance per entrypoint (main, voicechat)
+    // and the tick handler and the voice handler live on different ones.
+    private static volatile VoicechatServerApi voicechatApi;
+    private static volatile Snapshot snapshot = Snapshot.EMPTY;
 
     @Override
     public void onInitialize() {
-        ServerLifecycleEvents.SERVER_STARTED.register(s -> {
-            server = s;
-            LOGGER.info("Server started, portal-aware voice active");
+        ServerLifecycleEvents.SERVER_STARTED.register(s -> LOGGER.info("Server started, portal-aware voice active"));
+        ServerLifecycleEvents.SERVER_STOPPED.register(s -> snapshot = Snapshot.EMPTY);
+        ServerTickEvents.END_SERVER_TICK.register(s -> {
+            if (s.getTickCount() % REFRESH_INTERVAL_TICKS == 0) {
+                refreshSnapshot(s);
+            }
         });
-        ServerLifecycleEvents.SERVER_STOPPED.register(s -> server = null);
+    }
+
+    /** Server thread: capture players and the portals near each of them. */
+    private static void refreshSnapshot(MinecraftServer srv) {
+        VoicechatServerApi api = voicechatApi;
+        if (api == null) {
+            return;
+        }
+        double radius = api.getVoiceChatDistance() + PORTAL_SEARCH_MARGIN;
+        List<ServerPlayer> players = List.copyOf(srv.getPlayerList().getPlayers());
+        Map<UUID, Speaker> speakers = new HashMap<>();
+        for (ServerPlayer player : players) {
+            List<Portal> portals = PortalVoiceHelper.voicePortalsNear(player, radius);
+            if (!portals.isEmpty()) {
+                speakers.put(player.getUUID(), new Speaker(player, portals));
+            }
+        }
+        snapshot = new Snapshot(players, Map.copyOf(speakers));
     }
 
     @Override
@@ -63,7 +102,7 @@ public class PortalVoiceCompat implements ModInitializer, VoicechatPlugin {
     @Override
     public void initialize(VoicechatApi api) {
         if (api instanceof VoicechatServerApi serverApi) {
-            this.voicechatApi = serverApi;
+            voicechatApi = serverApi;
             LOGGER.info("Hooked into Simple Voice Chat server API");
         }
     }
@@ -74,13 +113,12 @@ public class PortalVoiceCompat implements ModInitializer, VoicechatPlugin {
     }
 
     /**
-     * Runs on Simple Voice Chat's packet thread for every mic packet. Cheap filters
-     * happen here; everything that touches the world is deferred to the server thread.
+     * Runs on Simple Voice Chat's packet thread for every mic packet, and sends portal
+     * voice from there. Only reads the snapshot and portal geometry, never world state.
      */
     private void onMicrophonePacket(MicrophonePacketEvent event) {
-        VoicechatServerApi api = this.voicechatApi;
-        MinecraftServer srv = server;
-        if (api == null || srv == null) {
+        VoicechatServerApi api = voicechatApi;
+        if (api == null) {
             return;
         }
 
@@ -103,30 +141,26 @@ public class PortalVoiceCompat implements ModInitializer, VoicechatPlugin {
             return;
         }
 
-        UUID senderUuid = senderConn.getPlayer().getUuid();
-        srv.execute(() -> routeThroughPortals(api, srv, senderUuid, micPacket));
-    }
-
-    private void routeThroughPortals(VoicechatServerApi api, MinecraftServer srv,
-                                     UUID senderUuid, MicrophonePacket micPacket) {
-        ServerPlayer sender = srv.getPlayerList().getPlayer(senderUuid);
-        if (sender == null || sender.isSpectator()) {
+        // Most speakers are nowhere near a portal, so this is usually the whole cost.
+        Snapshot snap = snapshot;
+        Speaker speaker = snap.speakersNearPortals().get(senderConn.getPlayer().getUuid());
+        if (speaker == null || speaker.player().isSpectator()) {
             return;
         }
 
+        routeThroughPortals(api, snap, speaker, micPacket);
+    }
+
+    private void routeThroughPortals(VoicechatServerApi api, Snapshot snap, Speaker speaker,
+                                     MicrophonePacket micPacket) {
+        ServerPlayer sender = speaker.player();
         double voiceDistance = api.getVoiceChatDistance();
         double maxRange = micPacket.isWhispering()
                 ? resolveWhisperDistance(api, voiceDistance)
                 : voiceDistance;
 
-        // Most speakers are nowhere near a portal, so bail out before looking at listeners.
-        List<Portal> portals = PortalVoiceHelper.voicePortalsNear(sender, maxRange);
-        if (portals.isEmpty()) {
-            return;
-        }
-
         Vec3 senderPos = sender.position();
-        for (ServerPlayer receiver : srv.getPlayerList().getPlayers()) {
+        for (ServerPlayer receiver : snap.players()) {
             if (receiver == sender) {
                 continue;
             }
@@ -143,7 +177,7 @@ public class PortalVoiceCompat implements ModInitializer, VoicechatPlugin {
             }
 
             PortalVoiceHelper.PortalRoute route =
-                    PortalVoiceHelper.findBestRoute(portals, senderPos, receiver, maxRange);
+                    PortalVoiceHelper.findBestRoute(speaker.portals(), senderPos, receiver, maxRange);
             if (route == null) {
                 continue;
             }
