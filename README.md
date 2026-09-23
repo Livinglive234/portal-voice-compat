@@ -63,7 +63,7 @@ The jar lands in `build/libs/`.
   (sender or listener) and spectator speakers are skipped.
 - **Whispering** uses the shorter whisper range, same as vanilla.
 - **Group chat stays private:** speakers in a voice group are never forwarded.
-- Single hop only (no portal-in-portal chains); the shortest portal path wins.
+- Single hop only: voice goes through one portal, not chains of them. The shortest portal path wins.
 - Threading: SimpleVC fires mic events on its own thread; the mod hops to the
   server thread before touching the world, and does nothing if the speaker has no
   portal nearby.
@@ -72,7 +72,6 @@ The jar lands in `build/libs/`.
 
 - Client mixin option: exact speaker positioning and the talking indicator, at the
   cost of requiring the mod on clients too.
-- Multi-hop portal chains.
 
 ## License
 
