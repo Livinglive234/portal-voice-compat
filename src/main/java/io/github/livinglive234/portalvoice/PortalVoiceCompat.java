@@ -151,7 +151,7 @@ public class PortalVoiceCompat implements ModInitializer, VoicechatPlugin {
         routeThroughPortals(api, snap, speaker, micPacket);
     }
 
-    private void routeThroughPortals(VoicechatServerApi api, Snapshot snap, Speaker speaker,
+    private static void routeThroughPortals(VoicechatServerApi api, Snapshot snap, Speaker speaker,
                                      MicrophonePacket micPacket) {
         ServerPlayer sender = speaker.player();
         double voiceDistance = api.getVoiceChatDistance();
@@ -203,7 +203,7 @@ public class PortalVoiceCompat implements ModInitializer, VoicechatPlugin {
     }
 
     /** Mirrors vanilla: {@code whisper_distance} below 0 means "use the voice distance". */
-    private double resolveWhisperDistance(VoicechatServerApi api, double voiceDistance) {
+    private static double resolveWhisperDistance(VoicechatServerApi api, double voiceDistance) {
         try {
             if (api.getServerConfig().hasKey("whisper_distance")) {
                 double whisperDistance = api.getServerConfig().getDouble("whisper_distance", voiceDistance);

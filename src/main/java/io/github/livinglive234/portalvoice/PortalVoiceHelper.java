@@ -56,7 +56,7 @@ public final class PortalVoiceHelper {
             });
         } catch (Exception e) {
             LOGGER.debug("Portal lookup failed", e);
-            portals.clear();
+            return List.of();
         }
         return List.copyOf(portals);
     }
