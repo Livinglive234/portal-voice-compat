@@ -42,6 +42,7 @@ public class PortalVoiceCompat implements ModInitializer, VoicechatPlugin {
     public static final String MOD_ID = "portal-voice-compat";
     private static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
+    // Static because Fabric creates a separate instance per entrypoint (main, voicechat).
     private static volatile MinecraftServer server;
     private volatile VoicechatServerApi voicechatApi;
 
@@ -159,10 +160,8 @@ public class PortalVoiceCompat implements ModInitializer, VoicechatPlugin {
                         .build();
                 api.sendLocationalSoundPacketTo(receiverConn, soundPacket);
 
-                if (LOGGER.isDebugEnabled()) {
-                    LOGGER.debug("{} -> {} via portal, path {} blocks", sender.getGameProfile().getName(),
-                            receiver.getGameProfile().getName(), String.format("%.1f", route.distance()));
-                }
+                LOGGER.debug("{} -> {} via portal, path {} blocks", sender.getGameProfile().getName(),
+                        receiver.getGameProfile().getName(), route.distance());
             } catch (Exception e) {
                 LOGGER.debug("Failed to send portal voice to {}", receiver.getGameProfile().getName(), e);
             }
