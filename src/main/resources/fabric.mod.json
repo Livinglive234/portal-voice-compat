@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "portal-voice-compat",
+  "version": "${version}",
+  "name": "Portal Voice Compat",
+  "description": "Makes Simple Voice Chat proximity voice audible through Immersive Portals portals. Server-side; no client install needed.",
+  "authors": ["livinggg"],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["io.github.livinglive234.portalvoice.PortalVoiceCompat"],
+    "voicechat": ["io.github.livinglive234.portalvoice.PortalVoiceCompat"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": "~1.21.1",
+    "immersive_portals": "*",
+    "voicechat": "*"
+  }
+}
